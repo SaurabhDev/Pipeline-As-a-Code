@@ -1,0 +1,9 @@
+<project name="module.name" default="build" basedir=".">
+<!--Replace the module.name with the module which you will build.-->
+	<import file="${buildDirectory}/build-ref.xml" />
+
+	<path id="dynamo.classpath">
+  <!--include the jar which are required to build the module -->
+	</path>
+	
+</project>

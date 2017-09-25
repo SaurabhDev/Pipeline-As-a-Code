@@ -1,0 +1,5 @@
+/.project
+**/*.class
+**/*.hbs
+**/kairos.**.jar
+**/TEST-***.xml

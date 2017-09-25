@@ -1,0 +1,79 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+
+	<groupId>com.sapient.pipeline</groupId>
+	<artifactId>TestATGSonar</artifactId>
+	<version>0.0.1-SNAPSHOT</version>
+	<name>TestATGSonar</name>
+	<url>http://maven.apache.org</url>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+		<sonarqube.version>6.2</sonarqube.version>
+		<java.version>1.8</java.version>
+		<sonar.host.url>http://10.207.93.28:9000/</sonar.host.url>
+		<sonar.sources>/u02/app/ci/jenkins_home/workspace/Checkout@libs/DevOps/src/com/rocc/devops/KairosOrderHolder.java</sonar.sources>
+	</properties>
+
+	<dependencies>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>3.8.1</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.sonarsource.sonarqube</groupId>
+			<artifactId>sonar-plugin-api</artifactId>
+			<version>${sonarqube.version}</version>
+			<scope>provided</scope>
+		</dependency>
+	</dependencies>
+	<profiles>
+		<profile>
+			<id>sonar</id>
+			<activation>
+				<activeByDefault>true</activeByDefault>
+			</activation>
+			<properties>
+				<!-- Optional URL to server. Default value is http://localhost:9000 -->
+				<sonar.host.url>
+					http://10.207.93.28:9000/
+				</sonar.host.url>
+			</properties>
+			<build>
+				<pluginManagement>
+					<plugins>
+						<plugin>
+							<groupId>org.codehaus.mojo</groupId>
+							<artifactId>sonar-maven-plugin</artifactId>
+							<executions>
+								<execution>
+									<id>s1</id>
+									<phase>verify</phase>
+									<goals>
+										<goal>sonar</goal>
+									</goals>
+									<configuration>
+										<sources>
+											<source>
+			/u02/app/ci/jenkins_home/workspace/Checkout@libs/DevOps/src/com/rocc/devops/KairosOrderHolder.java
+			/u02/app/ci/jenkins_home/workspace/Checkout@libs/DevOps/src/com/rocc/devops/KairosOrderHolder.java
+												</source>
+										</sources>
+									</configuration>
+								</execution>
+							</executions>
+						</plugin>
+						<plugin>
+							<groupId>org.sonarsource.scanner.maven</groupId>
+							<artifactId>sonar-maven-plugin</artifactId>
+							<version>3.2</version>
+						</plugin>
+					</plugins>
+				</pluginManagement>
+			</build>
+		</profile>
+	</profiles>
+</project>

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="CommonReference" basedir=".">
+	<echo message="Junit lib Path : ${buildDirectory}/build_lib/junit" />
+  <echo message="Cobertura lib Path : ${buildDirectory}/build_lib/cobertura" />
+  <echo message="Base Dir : ${cobertura.path}" />
+  
+	<path id="junit.classpath">
+    <fileset dir="${buildDirectory}/build_lib/groovy">
+			<include name="*.jar" />
+		</fileset>
+  	<fileset dir="${buildDirectory}/build_lib/junit">
+  		<include name="*.jar" />
+		</fileset>
+    <fileset dir="${buildDirectory}/build_lib/spock">
+			<include name="*.jar" />
+		</fileset>
+	</path>
+	
+	<path id="cobertura.classpath">
+  	<fileset dir="${buildDirectory}/build_lib/cobertura">
+			<include name="*.jar" />
+			<include name="lib/**/*.jar" />
+		</fileset>
+	</path>
+	
+	<path id="module.classpath">
+		<fileset dir="${basedir}/lib/">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+  <path id="extlib.classpath">
+		<fileset dir="${buildDirectory}/../extlib/">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DSS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+  </path>
+	
+  <taskdef name="groovyc" classname="org.codehaus.groovy.ant.Groovyc" classpathref="junit.classpath" />
+	<taskdef name="generatestubs" classname="org.codehaus.groovy.ant.GenerateStubsTask" classpathref="junit.classpath" />
+  <taskdef name="junit" classname="org.apache.tools.ant.taskdefs.optional.junit.JUnitTask" classpathref="junit.classpath" />
+	<taskdef classpathref="cobertura.classpath" resource="tasks.properties" />
+	
+	<target name="compile-test" unless="${disableUnitTest}" description="Compile groovy files" >
+    <delete dir="test/classes" />
+		<mkdir dir="test/classes" />
+		<groovyc srcdir="test/src" destdir="test/classes">
+			<classpath>
+				<path refid="junit.classpath"/>
+				<path refid="dynamo.classpath" />
+        <path refid="extlib.classpath" />
+				<pathelement path="classes"/>
+			</classpath>
+		</groovyc>
+		
+	</target>
+	
+	<target name="generate-stub" unless="${disableUnitTest}" description="Compile groovy files" >
+		<if name="localBuild" value="true">
+			<else>
+				<generatestubs srcdir="test/src" destdir="${build.path}/test/gensrc" />
+			</else>
+		</if>
+	</target>
+	
+	<target name="run-test" unless="${disableUnitTest}" description="Run Spock Test" depends="instrument" >
+    <if name="localBuild" value="true">
+			<property name="failJunit" value="true" />
+			<property name="junitThread" value="2" />
+			<else>
+				<property name="failJunit" value="false" />
+				<property name="junitThread" value="2" />
+			</else>
+		</if>
+		<junit fork="yes" haltonfailure="${failJunit}" haltonerror="${failJunit}" threads="${junitThread}">
+			<sysproperty key="net.sourceforge.cobertura.datafile" file="${cobertura.path}/cobertura.ser" />
+			<classpath>
+				<path refid="junit.classpath"/>
+				<path refid="dynamo.classpath" />
+				<pathelement path="instrumented"/>
+				<pathelement path="test/classes"/>
+				<path refid="cobertura.classpath" />
+				<path refid="extlib.classpath" />
+				<pathelement path="classes"/>
+			</classpath> 
+			<formatter type="brief" usefile="false"/>
+			<formatter type="xml" />			
+			<batchtest todir="${buildDirectory}/../reports/junit/xml">
+				<fileset dir="test/classes" >
+					<include name="**/*Test*.class"/>
+				</fileset>
+			</batchtest>
+		</junit>
+	</target>
+	
+	<target name="instrument" unless="${disableUnitTest}">
+		<delete dir="instrumented" />
+		<mkdir dir="instrumented" />
+		<echo message="instrumentation Cobertura Path : ${cobertura.path}/cobertura.ser" />
+		<!-- Instrument the application classes, writing the instrumented classes -->
+		<cobertura-instrument datafile="${cobertura.path}/cobertura.ser" todir="instrumented">
+			<ignore regex="org.slf4j.*" />
+			<auxClasspath>
+				<path refid="dynamo.classpath" />
+			</auxClasspath>
+			<fileset dir="classes">
+				<!-- Instrument all the application classes, but don't instrument the test classes. -->
+				<include name="**/*.class" />
+				<exclude name="**/*Test.class" />
+				<exclude name="**/*VO.class" />
+				<exclude name="**/*Bean.class" />
+				<exclude name="**/*Exception.class" />
+				<exclude name="**/*Constants.class" />
+				<exclude name="**/*Constant.class" />
+				<exclude name="**/*ErrorCodes.class" />
+				<exclude name="**/quote/beans/**.class" />
+				<exclude name="**/*DTO.class" />
+				<exclude name="**/*States.class" />
+			</fileset>
+		</cobertura-instrument>
+	</target>
+	
+	<target name="copy" description="copy all files from src">
+    <if name="disableUnitTest" value="true">
+      <copy todir="classes">
+        <fileset dir="src" excludes="**/*.java" />
+      </copy>
+    </if>
+	</target>
+	
+	<target name="compile">
+    <if name="disableUnitTest" value="true">
+      <delete dir="classes" />
+      <mkdir dir="classes" />
+      <javac srcdir="src" destdir="classes" fork="yes" debug="true"
+        debuglevel="vars,lines,source">
+        <classpath refid="dynamo.classpath" />
+        <classpath refid="extlib.classpath" />
+        <classpath refid="module.classpath" />
+      </javac>
+    </if>
+	</target>
+	
+	<target name="clean">
+    <if name="disableUnitTest" value="true">
+      <delete dir="${basedir}/classes/com" />
+      <delete dir="${basedir}/test/classes/com" />
+    </if>
+	</target>
+	
+	<target name="coverage" depends="compile-test,generate-stub, run-test" description="instrument ourself, run the tests and generate JUnit and coverage xml."/>
+	<target name="build" depends="clean,compile,copy,coverage" />		
+	
+</project>

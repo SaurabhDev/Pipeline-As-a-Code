@@ -1,0 +1,605 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project name="${projectname}" default="build" basedir="." xmlns:sonar="antlib:org.sonar.ant">
+	
+	<property file="username.properties" />
+    	
+	
+	<!-- Define an if and else task for use in this definition -->
+	<taskdef name="if" classname="ise.antelope.tasks.IfTask" classpath="./build_lib/atg/atg-ant.jar" />
+	<taskdef name="else" classname="ise.antelope.tasks.ElseTask" classpath="./build_lib/atg/atg-ant.jar" />
+	
+	<if name="servername" value="prod" >
+		<property file="kairos_prod_${env}_weblogic.properties" />
+		<echo message="Server Name passed is ${dynamo.server.name}" level="info" />
+		<echo message="Modules list used for build..... ${include.modules}" level="info" />
+		<echo message="Weblogic server name is ${weblogic.server}" level="info" />
+	</if>
+	
+	<if name="servername" value="pub" >
+		<property file="kairos_pub_${env}_weblogic.properties" />
+		<echo message="Server Name passed is ${dynamo.server.name}" level="info" />
+		<echo message="Weblogic server name is ${weblogic.server}" level="info" />
+	</if>
+	
+	<if name="servername" value="stg" >
+		<property file="kairos_stg_${env}_weblogic.properties" />
+		<echo message="Server Name passed is ${dynamo.server.name}" level="info" />
+		<echo message="Modules list used for build..... ${include.modules}" level="info" />
+		<echo message="Weblogic server name is ${weblogic.server}" level="info" />
+	</if>	
+	
+	<if name="servername" value="sso" >
+		<property file="kairos_sso_${env}_weblogic.properties" />
+		<echo message="Server Name passed is ${dynamo.server.name}" level="info" />
+		<echo message="Modules list used for build..... ${include.modules}" level="info" />
+		<echo message="Weblogic server name is ${weblogic.server}" level="info" />
+	</if>
+  <property name="my.project.tmp.exec.output" value="exec-output.txt"/>
+
+	<!-- The dynamo class path -->
+	<path id="dynamo.classpath">
+		<fileset dir="${dynamo.root.dir}/DAS/lib">
+			<include name="**/*.jar" />
+			<exclude name="**/groovy-all-1.7.2.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAS-UI/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DPS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DSS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DCS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAF">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/NucleusBrowser/atglib">
+			<include name="*.jar" />
+		</fileset>
+	</path>
+	<target name="assemble" depends="copy, -execute-assembler-cmd" />
+
+	<!-- This target builds the module, assembles the ear, and deploys it to JBoss. -->
+	<target name="build" depends="-init, copy, clean, copy-to-atg-local, base-instrument, module-count, coverage-report,alternate-coverage-report,copy-to-atg" description="builds the module" />
+	<target name="deploy-ear-to-weblogic" depends="clean-artifacts, -execute-assembler-cmd" description="builds the module" />
+
+	<!-- Deletes the build and install directories. -->
+	<target name="clean" depends="-init" description="Deletes the contents of the install and build directories.">
+		<echo message="Deleting:" />
+		<echo message="  ${dynamo.root.dir}/${module.name}" />
+		<delete dir="${dynamo.root.dir}/${module.name}" failonerror="false" includeEmptyDirs="true"/>
+		<delete dir="${dynamo.root.dir}/atgpatch" failonerror="false" includeEmptyDirs="true"/>
+		<delete dir="${build.root.dir}" />
+		<mkdir dir="${build.root.dir}" />
+	</target>
+	
+	<target name="clean-artifacts" description="Deletes old build artifacts.">
+		<echo message="Deleting:" />
+		<echo message="  ${weblogic.home}/application/${weblogic.server}/${module.name}.ear" />
+		<echo message="  ${weblogic.home}/application/${weblogic.server}/${module.name}.ear.tar.gz" />
+		<delete dir="${weblogic.home}/application/${weblogic.server}/${module.name}.ear" failonerror="false" includeEmptyDirs="true"/>
+		<delete dir="${weblogic.home}/application/${weblogic.server}/${module.name}.ear.tar.gz" failonerror="false" includeEmptyDirs="true"/>
+	</target>
+	
+	
+	<target name="copy">
+		<delete includeEmptyDirs="true" failonerror="false">
+			<fileset dir="${dynamo.home}/servers/" >
+				<include name="**/*" />
+				<exclude name="**/cimDbInitializer" />
+				<exclude name="**/importVersionedData" />
+				<exclude name="**/genericServers" />
+			</fileset>	
+		</delete>
+		
+		<copy todir="${dynamo.home}/servers/" overwrite="true">
+			<fileset dir="../env">
+			<include name="**"/>
+			</fileset>
+		</copy> 
+	</target>
+
+	<target name="downloadExtLib">
+		<if name="localBuild" value="true">
+			<get ignoreerrors="true" quiet="true" src="http://kairosci/trackrepo/Framework/Integration-1.0.0-jar-with-dependencies.jar" dest="../extlib/" usetimestamp="false" />
+			<get ignoreerrors="true" quiet="true" src="http://kairosci/trackrepo/Framework/WebssoSharedLibrary-1.0.0.jar" dest="../extlib/" usetimestamp="false" />	
+		<else>
+			<copy todir="../extlib/">
+				<fileset dir="/app/ci/weblogic/modules/">
+					<include name="Integration-1.0.0-jar-with-dependencies.jar"/>
+					<include name="WebssoSharedLibrary-1.0.0.jar"/>
+				</fileset>
+			</copy>
+		</else>
+		</if>
+	</target>
+
+	<!-- This target builds the ATG module. -->
+	<target name="build-module" depends="-init,downloadExtLib" description="">
+		<delete dir="${build.path}/test/gensrc" />
+		<mkdir dir="${build.path}/test/gensrc" />
+		<ant antfile="./build.xml" dir="${build.path}/base" target="build">
+			<property name="buildDirectory" value="${basedir}"/>
+		</ant>
+		<ant antfile="./build.xml" dir="${build.path}/administration/profile" target="build">
+			<property name="buildDirectory" value="${basedir}"/>
+		</ant>
+		<echo message="All Modules built." />
+	</target>
+
+	<!-- This target builds the ATG modules. -->
+<target name="run-build-module" depends="-init,downloadExtLib">
+    <property name="count" value="${n}" />
+    <propertycopy name="displayName" from="modulename${count}" />
+    <echo message="${displayName}" />
+    <run-tests location="${basedir}/../modules/${displayName}" />
+</target>
+
+<!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+<!-- Writes the results of the unit tests in a junit report        -->
+<!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -->
+<target name="module-count">
+    <taskdef resource="net/sf/antcontrib/antlib.xml">
+        <classpath>
+              <fileset dir="./build_lib/atg/"/>
+        </classpath>
+    </taskdef>
+ 
+    <exec executable="./scripts/module-count.sh"
+        output="${my.project.tmp.exec.output}"
+        resultproperty="my.project.my.task.result"
+        failonerror="false"/>
+    <loadfile  srcfile="${my.project.tmp.exec.output}" property="my.project.my.task.output" />
+    <echo message="${my.project.my.task.result}"/>
+    <script language="javascript">
+    var list="", n=parseInt(project.getProperty("my.project.my.task.result"),10);
+    for (var i = 1; i &lt; n+1; i++) list += i + ",";  
+    project.setProperty("list", list);
+    </script>
+    <echo message="${list}" />
+    <foreach param="n" list="${list}" target="run-build-module"/>
+</target>
+
+<macrodef name="run-tests">
+  <attribute name="location" />
+    <sequential>
+      <echo message="@{location}" />
+      <ant antfile="@{location}/build.xml" dir="@{location}" target="build">
+        <property name="buildDirectory" value="${basedir}"/>
+      </ant>
+    </sequential>
+</macrodef>
+
+	<target name="copy-to-atg" unless="localBuild">
+		<mkdir dir="${dynamo.root.dir}/${ant.project.name}" />
+		<copy  todir="${dynamo.root.dir}/${ant.project.name}" includeEmptyDirs="true">
+			<fileset dir="../modules/." >
+				<exclude name="**/*.gitignore" />
+				<exclude name="**/*.project" />
+				<exclude name="**/*.classpath" />
+				<exclude name="**/*.java" />
+			</fileset>
+		</copy>
+		<copy file="dynamolog.properties" todir="${dynamo.home}" overwrite="true"/>
+	</target>
+
+	<target name="copy-to-atg-local" if="localBuild" depends="clean-atg">
+		<mkdir dir="${dynamo.root.dir}/${ant.project.name}" />
+		<copy  todir="${dynamo.root.dir}/${ant.project.name}" includeEmptyDirs="true">
+			<fileset dir="../modules/." >
+				<exclude name="**/*.gitignore" />
+				<exclude name="**/*.project" />
+				<exclude name="**/*.classpath" />
+				<exclude name="**/*.class" />
+			</fileset>
+		</copy>
+		<mkdir dir="${dynamo.root.dir}/atgpatch" />
+		<copy  todir="${dynamo.root.dir}/atgpatch" includeEmptyDirs="true">
+			<fileset dir="../atgpatch/." >
+				<exclude name="**/*.gitignore" />
+			</fileset>
+		</copy>
+		<copy file="dynamolog.properties" todir="${dynamo.home}" overwrite="true"/>
+	</target>
+	
+	<!-- This target uses the runAssembler command to build the assembled ear and deploy it to JBoss. -->
+	<target name="-execute-assembler-cmd" description="Executes ATG's runAssembler by command line call">
+		<!-- Configure various arguments to pass to runAssembler depending upon ANT properties set by the user. -->
+		<if name="liveconfig" value="true">
+			<property name="assemble.cmd.liveconfig" value="-liveconfig" />
+			<else>
+				<property name="assemble.cmd.liveconfig" value="" />
+			</else>
+		</if>
+		<if name="standalone" value="true">
+			<property name="assemble.cmd.standalone" value="-standalone" />
+			<else>
+				<property name="assemble.cmd.standalone" value="" />
+			</else>
+		</if>
+		<if name="omitlicenses" value="true">
+			<property name="assemble.cmd.omitlicenses" value="-omit-licenses" />
+			<else>
+				<property name="assemble.cmd.omitlicenses" value="" />
+			</else>
+		</if>
+		<if name="pack" value="true">
+			<property name="assemble.cmd.pack" value="-pack" />
+			<else>
+				<property name="assemble.cmd.pack" value="" />
+			</else>
+		</if>
+		<if name="dynamo.server.name" value="">
+			<property name="assemble.cmd.servername" value="" />
+			<else>
+				<property name="assemble.cmd.servername" value="-server ${dynamo.server.name}" />
+			</else>
+		</if>
+		<if name="include.admin" value="true">
+			<property name="assemble.cmd.modules" value="${include.modules} ${dynamo.modules} DafEar.Admin" />
+			<else>
+				<property name="assemble.cmd.modules" value="${include.modules} ${dynamo.modules}" />
+			</else>
+		</if>
+		<if name="include.layer" value="true">
+			<property name="assemble.cmd.layer" value="-layer staging" />
+			<else>
+				<property name="assemble.cmd.layer" value="" />
+			</else>
+		</if>
+        <if name="hotfix" value="true">
+			<property name="assemble.cmd.hotfix" value="-prependJars" />
+            <else>
+                <property name="assemble.cmd.hotfix" value="" />
+            </else>
+        </if>
+		
+		<echo message="Invoking RunAssembler Command" />
+		<echo message="assemble.cmd.liveconfig=${assemble.cmd.liveconfig}" />
+		<echo message="assemble.cmd.omitlicenses=${assemble.cmd.omitlicenses}" />
+		<echo message="assemble.cmd.standalone=${assemble.cmd.standalone}" />
+		<echo message="assemble.cmd.pack=${assemble.cmd.pack}" />
+		<echo message="assemble.cmd.layer=${assemble.cmd.layer}" />
+		<echo message="assemble.cmd.modules=${assemble.cmd.modules}" />
+		<echo message="dynamo home=${dynamo.home}" />
+		<echo message="assemble.cmd.hotfix=${assemble.cmd.hotfix}" />
+		<echo message=" " />
+		<property name="earPath" value="${weblogic.home}/application/${weblogic.server}/${module.name}.ear" />
+		<!-- The syntax of the run assembler command is:runAssembler [options] output-file-name -m module-list -->
+		<exec dir="${dynamo.home}/bin" vmlauncher="false" executable="${dynamo.home}/bin/runAssembler" failonerror="yes">
+			<arg value="-overwrite" />
+			<arg line="-dynamo-env-properties ${dynamo.home}/dynamolog.properties" />
+			<arg value="${assemble.cmd.omitlicenses}" />
+			<arg value="${assemble.cmd.liveconfig}" />
+			<arg value="${assemble.cmd.standalone}" />
+			<arg value="${assemble.cmd.pack}" />
+			<arg line="${assemble.cmd.hotfix}" />
+			<arg value="${earPath}" />
+ 			<arg line="${assemble.cmd.layer}" />
+			<arg line="-m ${assemble.cmd.modules}" />
+		</exec>
+		<if name="servername" value="pub">
+		<else>
+			<copy todir="${earPath}/META-INF" >
+				<fileset dir="${basedir}/support/META-INF" />
+			</copy>
+		</else>
+		</if>
+		<if name="localBuild" value="true">
+		<copy todir="${earPath}/atglib">
+			<fileset dir="../extlib">
+				<include name="*.jar"/>
+			</fileset>
+		</copy>
+		<else>
+		<copy todir="${earPath}/atglib">
+			<fileset dir="/u02/opt/weblogic/modules/">
+				<include name="Integration-1.0.0-jar-with-dependencies.jar"/>
+				<include name="WebssoSharedLibrary-1.0.0.jar"/>
+			</fileset>
+		</copy>
+		</else>
+		</if>
+		<if name="extlib" value="">
+		<else>
+			<manifest file="${earPath}/atg_bootstrap_ejb.jar/META-INF/MANIFEST.MF" mode="update" mergeClassPathAttributes="true" flattenAttributes="true">
+				<attribute name="Class-Path" value="${extlib}" />
+			</manifest>
+		</else>
+       		</if>
+		<!--<if name="copyweblogicfile" value="true">
+			<copy file="weblogic-application.xml" todir="${weblogic.home}/application/${weblogic.server}/${module.name}.ear/META-INF/"/>
+		</if> -->
+		
+	</target>
+
+	<target name="clean-atg" >
+		<delete dir="${dynamo.root.dir}/${ant.project.name}" />
+	</target>
+
+	<!-- Initializes the build.  This target is not public, but should be called by all the others.	-->
+	<target name="-init">
+		<!-- Create the timestamp -->
+		<tstamp />
+		<echo message="" />
+		<echo message="" />
+		<echo message="#############################################################################" />
+		<echo message="#############################################################################" />
+		<echo message="${module.name}: start date = ${DSTAMP}  start time = ${TSTAMP}" />
+		<echo message="JAVA_HOME       = ${JAVA_HOME}" />
+		<echo message="dynamo.home     = ${dynamo.home}" />
+		<echo message="dynamo.root.dir = ${dynamo.root.dir}" />
+		<echo message="weblogic.home      = ${weblogic.home}" />
+		<echo message="#############################################################################" />
+		<echo message="#############################################################################" />
+		<echo message="" />
+		<echo message="" />
+		<if name="localBuild" value="true">
+			<property name="cobertura.path" value="${build.root.dir}/datafile" />
+			<property name="build.path" value="${dynamo.root.dir}/KAIROS" />
+			<else>
+				<property name="cobertura.path" value="${basedir}/../datafile" />
+				<property name="build.path" value="${basedir}/../modules" />
+			</else>
+		</if>
+		<echo message="Cobertura path = ${cobertura.path}" />
+		<echo message="Modules path= ${build.path}" />
+		<echo message="#############################################################################" />
+		<echo message="#############################################################################" />
+
+		
+	</target>
+	
+	<path id="cobertura.classpath">
+		<fileset dir="./build_lib/cobertura">
+			<include name="*.jar" />
+			<include name="lib/**/*.jar" />
+		</fileset>
+	</path>
+	<taskdef classpathref="cobertura.classpath" resource="tasks.properties" />
+	
+	
+	<target name="base-instrument" >
+		<delete dir="${cobertura.path}" />
+		<mkdir dir="${cobertura.path}" />
+		<delete>
+			<fileset dir="./../reports/coverage/" includes="**/*.xml"/>
+		</delete>
+		<delete>
+			<fileset dir="./../reports/junit/" includes="**/*.xml"/>
+		</delete>
+		<!-- Instrument the application classes, writing the instrumented classes -->
+		<cobertura-instrument datafile="${cobertura.path}/cobertura.ser" />
+	</target>
+	
+	<target name="coverage-report">
+		<echo message="Cobertura Path : ${cobertura.path}/cobertura.ser" />
+		<cobertura-report datafile="${cobertura.path}/cobertura.ser" destdir="${basedir}/../reports/coverage/xml" format="xml" >
+		</cobertura-report>
+	</target>
+	
+	<target name="alternate-coverage-report" depends="-init">
+		<!--
+			Generate a series of HTML files containing the coverage
+			data in a user-readable form using nested source filesets.
+		-->
+		<delete dir="${build.root.dir}/reports/html" />
+		<mkdir dir="${build.root.dir}/reports/html" />
+		<echo message="Cobertura Path : ${cobertura.path}/cobertura.ser" />
+		<cobertura-report datafile="${cobertura.path}/cobertura.ser" destdir="${basedir}/../reports/html" >
+
+			<fileset dir="${build.path}/base/src" includes="**/*.java" />
+			<fileset dir="${build.path}/catalog/src" includes="**/*.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" />
+			<fileset dir="${build.path}/siteManagement/src" includes="**/*.java" />
+			<fileset dir="${build.path}/profile/src" includes="**/*.java" />
+			<fileset dir="${build.path}/services/src" includes="**/*.java" />
+			<fileset dir="${build.path}/administration/profile/src" includes="**/*.java" />
+			<fileset dir="${build.path}/experience/src" includes="**/*.java" />
+			<fileset dir="${build.path}/commerce/core/src" includes="**/*.java" />
+			<fileset dir="${build.path}/integration/atpService/src" includes="**/*.java" />
+			<fileset dir="${build.path}/integration/common/src" includes="**/*.java" />
+			<fileset dir="${build.path}/commerce/core/src" includes="**/*.java" />
+			<fileset dir="${build.path}/commerce/pricing/src" includes="**/*.java" />
+			<fileset dir="${build.path}/commerce/quote/src" includes="**/*.java" />
+			<fileset dir="${build.path}/commerce/purchase/src" includes="**/*.java" />
+		</cobertura-report>
+	</target>
+  
+<!-- This target call post selenium test, it has the dependency in -init target, so added an extra target which is called explicitly -->
+	 <target name="coverage-report-xml" depends="-init">
+		<echo message="Cobertura Path : ${cobertura.path}/cobertura.ser" />
+		<cobertura-report datafile="${cobertura.path}/cobertura.ser" destdir="${basedir}/../reports/coverage/xml" format="xml" >
+			<fileset dir="${build.path}/base/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/catalog/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/siteManagement/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/profile/src" includes="**/*.java" excludes="**/*VO.java" />
+            <fileset dir="${build.path}/wcs/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/services/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/administration/profile/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/experience/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/integration/atp/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/integration/orderTracker/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/orderHistory/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/integration/atpService/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/integration/icbbAtpService/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/integration/atpCalculationEngine/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/integration/common/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/commerce/core/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/commerce/atp/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/commerce/pricing/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/commerce/quote/src" includes="**/*.java" excludes="**/*VO.java" />
+            <fileset dir="${build.path}/commerce/quote/order/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/commerce/purchase/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/productlist/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/personalization/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}/personalization/history/src" includes="**/*.java" excludes="**/*VO.java" />
+			<fileset dir="${build.path}" excludes="**/GenericPropertyAccessorHelper.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSCategoryNodePropertyAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/TechSpecsGenerativePropertyAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSCategoryMultiLanguagePropertyAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSWCSCategoryCatalogAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/GenericPropertyAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSWCSCategoryPathAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSWCSCategoryPropertyMapAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSWCSCategoryRegionAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSWCSRenditionTextPropertyAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSGenerativePropertyAccessor.java" />
+			<fileset dir="${build.path}" excludes="**/KAIROSSetSites.java" />
+			<fileset dir="${build.path}/catalog/src" includes="**/*.java" excludes="**/*KairosChildCategoriesDerivation.java" />
+			<fileset dir="${build.path}/catalog/src" includes="**/*.java" excludes="**/*DisabledChildCategoriesDerivation.java"/>
+			<fileset dir="${build.path}/catalog/src" includes="**/*.java" excludes="**/*CatalogRegionalDerivation.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSCategoryNodePropertyAccessor.java"/>
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*CustomConfigImportDocumentSubmitter.java"/>
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*CustomIndexingConfigImporter.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*PGBodyItemPanel.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*PGBodyItemLink.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*TechSpecsGenerativePropertyAccessorBase.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*SearchHistoryPropertyAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSCategoryMultiLanguagePropertyAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*GenericPropertyAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*TechSpecsGenerativePropertyAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSWCSCategoryCatalogAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSWCSCategoryPathAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSWCSCategoryRegionAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSWCSRenditionTextPropertyAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*GenericPropertyAccessorHelperBase.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*TechSpecsRefinementMenuHandler.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*KAIROSGenerativePropertyAccessor.java" />
+			<fileset dir="${build.path}/endeca/src" includes="**/*.java" excludes="**/*EndecaCatalogRepositoryHelper.java" />
+			<fileset dir="${build.path}/elastic/src" includes="**/*.java" excludes="**/*Bean.java" />
+			<exclude name="${build.path}/administration/profile/src/com/kairos/admin/bean/" />
+			<exclude name="${build.path}/integration/atpCalculationEngine/src/com/kairos/atpservice/acerequest/bean/" />
+			<exclude name="${build.path}/integration/atpCalculationEngine/src/com/kairos/atpservice/aceresponse/bean/" />	
+			<exclude name="${build.path}/endeca/src/com/kairos/endeca/bean/" />
+			<exclude name="${build.path}/commerce/core/src/com/kairos/commerce/pricing/beans/" />
+			<exclude name="${build.path}/commerce/core/src/com/kairos/commerce/atp/beans/" />
+			<exclude name="${build.path}/administration/profile/src/com/kairos/userprofiling/menus/beans/" />
+			<exclude name="${build.path}/experience/src/com/kairos/view/bean/" />
+		</cobertura-report>
+	</target>
+	
+	<path id="lib.classpath">
+		<fileset dir="./build_lib" includes="**/*.jar" />
+		<fileset dir="${dynamo.root.dir}/DAS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DPS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DSS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAF/Endeca/Assembler/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAF/Endeca/Index/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAF/Endeca/Base/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAF/Search/Index/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DAF/Search/Base/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/DCS/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/REST/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/experience/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/commerce/quote/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/commerce/purchase/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/catalog/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/integration/atpService/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/integration/order/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/integration/pricing/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${dynamo.root.dir}/KAIROS/integration/common/lib">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="../extlib/">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+	
+	<!-- Define the SonarQube target -->
+	<if name="localBuild" value="true">
+		<property file="${basedir}/sonar-dev.properties"/>
+	<else>
+		<property file="${basedir}/sonar-dev-dojo.properties"/>
+		<property name="sonar.junit.reportsPath" value="${basedir}/../reports/junit/xml" />
+	</else>
+	</if>
+	
+	<!-- Must pass the Sonar Project Key and Prject Name -->
+		
+	<!-- Cobertura & Junit Properties -->
+	<property name="sonar.core.codeCoveragePlugin" value="cobertura" />
+	<property name="sonar.cobertura.reportPath" value="${basedir}/../reports/coverage/xml/coverage.xml" />
+	<property name="sonar.projectKey" value="${sonar_key}" />
+	<property name="sonar.projectName" value="${sonar_project}" />
+	
+	<target name="sonar" unless="${disableSonar}" depends="-init" >
+		<property name="sonar.projectBaseDir" value="${build.path}" />
+		<path id="source.classpath">
+			<dirset dir="${build.path}">
+				<include name="**/src"/>
+				<exclude name="**/test/gensrc"/>
+				<exclude name="**/ClientInformationDroplet**"/>
+				<exclude name="**/test/src"/>
+			</dirset>
+		</path>
+		
+		<path id="tests.classpath">
+			<dirset dir="${build.path}">
+				<include name="**/test/gensrc"/>
+			</dirset>
+		</path>
+		
+		<path id="binaries.classpath">
+			<dirset dir="${build.path}">
+				<include name="**/classes/"/>
+			</dirset>
+			
+		</path>
+		<taskdef uri="antlib:org.sonar.ant" resource="org/sonar/ant/antlib.xml">
+			<!-- Update the following line, or put the "sonar-ant-task-*.jar" file in your "$HOME/.ant/lib" folder -->
+			<classpath path="./build_lib/sonar/sonar-ant-task-2.3.jar" />
+		</taskdef>
+
+	<pathconvert property="sonar.sources" pathsep="," refid="source.classpath" />
+	<pathconvert property="sonar.tests" pathsep="," refid="tests.classpath" />
+	<pathconvert property="sonar.java.libraries" pathsep="," refid="lib.classpath" />
+	<pathconvert property="sonar.java.binaries" pathsep="," refid="binaries.classpath" />
+
+    <!-- Execute the SonarQube analysis -->
+	<sonar:sonar >
+	</sonar:sonar>
+
+	</target>
+
+		
+</project>
